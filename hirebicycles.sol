@@ -10,15 +10,27 @@ contract BicycleHire {
     //duration * rates = cost
     //check person a balance
     //deduct balance
+
     address owner;
+    uint ownerBalance;
 
     constructor() {
         owner = msg.sender;
     }
+    //only owner permission
+    modifier onlyOwner() {
+        require(msg.sender == owner, "You do not have permission");
+        _;
+    }
+    //only renter permission
+    modifier isRenter(address _walletAddress) {
+        require(msg.sender == _walletAddress, "You can only manage your account");
+        _;
+    }
 
     //renter details
     struct Renter {
-        address payable walletAddress;
+        address payable _walletAddress;
         string firstName;
         string lastName;
         bool canRent;
@@ -38,7 +50,7 @@ contract BicycleHire {
     }
 
     //rent bicycle
-    function checkOut(address _walletAddress) public {
+    function checkOut(address _walletAddress) public isRenter(_walletAddress){
         require(renters[_walletAddress].due == 0, "You have a pending balance");
         require(renters[_walletAddress].canRent == true, "You cannot rent at this time");
         renters[_walletAddress].active = true;
@@ -49,66 +61,102 @@ contract BicycleHire {
     }
 
     //return bicycle
-    function checkIn(address _walletAddress) public {
+    function checkIn(address _walletAddress) public isRenter(_walletAddress){
         require(renters[_walletAddress].active == true, "Please checkout a bike first" );
         renters[_walletAddress].active == false;
-        //unix timestamp - epochconverter.com
         renters[_walletAddress].endTime = block.timestamp;
         dueAmount(_walletAddress);
     }
 
-    //function duration of hire
+    //duration of hire
     function renterTimespan(uint startTime, uint endTime) internal pure returns(uint) {
         return endTime - startTime;
     }
 
-    //function duration of hire in minutes
-    function getTotalDuration(address _walletAddress) public view returns(uint) {
-        require(renters[_walletAddress].active == true, "Bike is currently checked out" );
-        // uint timespan = renterTimespan(renters[_walletAddress].startTime, renters[_walletAddress].endTime);
-        // uint timespanMinutes = timespan/60;
-        // return timespanMinutes;
-        return 123;
+    //duration of hire in minutes
+    function getTotalDuration(address _walletAddress) public isRenter(_walletAddress) view returns(uint) {
+        if (renters[_walletAddress].startTime == 0 || renters[_walletAddress].endTime == 0) {
+            return 0;
+        } else {
+            uint timespan = renterTimespan(renters[_walletAddress].startTime, renters[_walletAddress].endTime);
+            uint timespanInMinutes = timespan / 60;
+            return timespanInMinutes;
+        }
+
     }
 
-    //function get contract balance
-    function getBalanceOf() public view returns(uint){
+    //get contract balance
+    function getBalanceOf() onlyOwner() public view returns(uint){
         return address(this).balance;
     }
 
-    //function get renters balance
-    function balanceOfRenter(address _walletAddress) public view returns(uint) {
+    //get owners balance
+    function getOwnerBalance() view public onlyOwner() returns(uint) {
+        return ownerBalance;
+    }
+
+    //withdraw balance
+    function withdrawOwnerBalance() payable public {
+        payable(owner).transfer(ownerBalance);
+    }
+
+    //get renters balance
+    function balanceOfRenter(address _walletAddress) public isRenter(_walletAddress) view returns(uint) {
         return renters[_walletAddress].balance;
     }
 
-    //function due amount
+    //due amount
     function dueAmount(address _walletAddress) internal {
         uint timespanMinutes = getTotalDuration(_walletAddress);
         uint thirtyMinuteIncrements = timespanMinutes/ 30;
-        renters[_walletAddress].due = thirtyMinuteIncrements * 0.002 ether;
+        renters[_walletAddress].due = thirtyMinuteIncrements * 2000000000000000;
     }
 
-    //function check if you can rent
-    function canRentBike(address _walletAddress) public view returns(bool) {
+    //check if you can rent
+    function canRentBike(address _walletAddress) public isRenter(_walletAddress) view returns(bool) {
         return renters[_walletAddress].canRent;
     }
 
-    //function deposit
-    function deposit(address _walletAddress) payable public {
+    //deposit money
+    function deposit(address _walletAddress) payable isRenter(_walletAddress) public {
         renters[_walletAddress].balance += msg.value;
     }
-
-    //function make payment
-    function makePayment(address _walletAddress) payable public {
+    
+    //make payment
+    function makePayment(address _walletAddress, uint _amount) public isRenter(_walletAddress) {
         require(renters[_walletAddress].due > 0, "Nothing is due");
-        require(renters[_walletAddress].balance > msg.value, "You do not have enough funds to cover payment. Please make a deposit");   
-        renters[_walletAddress].balance -= msg.value;
+        require(renters[_walletAddress].due == _amount, "Please input the correct amount");
+        require(renters[_walletAddress].balance >= _amount, "You do not have enough funds to cover payment. Please make a deposit");   
+        renters[_walletAddress].balance -= _amount;
         renters[_walletAddress].canRent = true;
+        renters[_walletAddress].active = false;
         renters[_walletAddress].due = 0;
         renters[_walletAddress].startTime = 0;
         renters[_walletAddress].endTime = 0;
 
+    }
 
+//For front end
+
+    //get amount due
+    function getDue(address _walletAddress) public isRenter(_walletAddress) view returns(uint) {
+        return renters[_walletAddress].due;
+    }
+
+    //get basic details for front end
+    function getRenter(address _walletAddress) public isRenter(_walletAddress) view returns(string memory firstName, string memory lastName, bool canRent, bool active) {
+        firstName = renters[_walletAddress].firstName;
+        lastName = renters[_walletAddress].lastName;
+        canRent = renters[_walletAddress].canRent;
+        active = renters[_walletAddress].active;
+    }
+
+    //see if the renter already exist on the app
+    function renterExists(address _walletAddress) public isRenter(_walletAddress) view returns(bool) {
+        if (renters[_walletAddress]._walletAddress != address(0)) {
+            return true;
+        }
+        return false;
     }
 
 }
